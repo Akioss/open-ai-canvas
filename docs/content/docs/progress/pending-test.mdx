@@ -5,6 +5,38 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 # 待测试
 
+## 平台级 Agent（单一面板，画布可选绑定）
+
+- 已实现：`CanvasCloudAgentPanel` 挂在 `UserLayout`，所有登录页面共用一个实例（跨路由不卸载）。画布编辑器只通过 `web/src/stores/use-global-agent-store.ts` 发布当前画布上下文（画布 ID、节点、选区、引用、预填），离开画布时撤回。发送时有画布就带 `canvasId` 和画布上下文，没有就不带。
+- 后端：`POST /api/agent/runs` 与 `/messages` 的 `canvasId` 改为可选。无画布运行不查画布、不占画布锁（多段平台对话可并行）、不暴露画布/生成/预演工具、不构建画布上下文；`contextScope`、`focusNodeIds` 必须为空。续轮允许换绑画布（首页 → 画布 → 离开），换绑时不继承旧画布的创作锚点，并注入 `scope_change` 说明，告诉模型旧节点 ID 与快照哈希已失效。
+- 前端：对话历史与待确认提交改为按账号全局存储（不再按画布分）。写回同步、审批前保存跟随运行自身的 `run.canvasId`：离开画布后，进行中那一轮仍写回原画布。
+- 已验证：`go test ./...`（新增 `cloud_agent_unbound_test.go`：无画布运行、拒绝无画布时带画布上下文、续轮换绑）、`bun run build`、`bun test`（Agent 相关 144 项）、`bun run lint`。
+- [ ] 首页无画布直接对话：能收到回复，不出现画布工具调用；面板标题不显示节点数。
+- [ ] 首页对话后进入画布继续发消息：同一段对话延续，Agent 能读取当前画布；离开画布再发：不再读写该画布。
+- [ ] 画布内 Agent 运行或等待审批时离开画布：运行继续，审批后结果写回原画布。
+- [ ] 各页面只有一个悬浮入口，位置、开合状态跨页面保持；切换账号后对话历史隔离。
+- [ ] 明暗主题、窄屏（<640px）下面板布局与滚动正常。
+
+## 积分运营：冻结积分自动退回开关
+
+- 已实现：`/admin/credit-operations` 右上角新增「自动退回」开关，默认关闭；开启前二次确认。配置存于 `system_settings` 键 `billing_auto_refund`（`{"enabled": bool}`），不新增表结构；接口 `GET/PATCH /api/admin/settings/billing-auto-refund`，仅管理员可读写，修改写入管理员审计 `billing_auto_refund.update`。
+- 行为：开启后后台 worker 每分钟按「待核对队列」口径（费用待核对、运行超 40 分钟、任务已失败/取消但仍预授权）每轮最多 100 条调用既有退款路径，写退款流水并记录核对备注「系统自动退回」；开启时立即执行一轮，关闭后下一轮停止。
+- 已验证：`go test ./internal/app/`（默认关闭、非管理员不可修改）、`bun run build`。
+- [ ] 开启开关后，待核对订单在 1 分钟内变为已退款，用户可用积分恢复、冻结积分减少，积分流水出现退款记录。
+- [ ] 关闭开关后新的待核对订单保持冻结；刷新页面后开关状态保持；非管理员调用接口返回 403。
+
+## 视频画质增强（火山 AI MediaKit 大模型版）
+
+- 已实现：官方插件 `volcengine-mediakit`（provider `volcengine-mediakit-enhance-video`，`kind: processing`，能力仍为 `video`），调用 `POST /api/v1/tools/enhance-video-generative` 与 `GET /api/v1/tasks/{task_id}`，`client_token` 取宿主幂等键。manifest provider 新增 `kind` 字段（`generation` / `processing`），目录接口返回给前端。
+- 后台：渠道模型视频能力新增 `processing`（`fpsPolicy` = `keep_source` / `user_select`、`fpsOptions`、`maxSourceSeconds` ≤ 180）；价格档新增 `fpsBand`（`le30` / `le60` / `le120`）与生成方式「画质增强」（`enhance`），可按次或按秒计费。
+- 准入：processing 任务不要求 prompt；源时长、尺寸由服务端按资源记录重算（短边 360–1080、长边 ≤1920、时长 ≤ 上限），`videoSeconds` = 源时长向上取整，帧率按后台策略收敛。轮询上限保持 1 小时。
+- 计费：按秒订单按源时长预扣，完成后按实际输出时长结算（优先 ffprobe 探测的资源时长，其次上游 `result.duration`），多退少补；都拿不到时进入待核对。保持原帧率按 ≤30fps 档预扣。
+- 画布：视频节点悬浮工具条「画质增强」，弹窗选模型、目标分辨率（低于源短边置灰）、帧率（仅 user_select）、码率档/精确码率，显示报价；提交后在右侧生成 loading 视频节点并连线；失败重试按节点 `videoEnhance` 参数重建请求。processing 模型不出现在普通视频生成下拉。
+- 已验证：`go test ./...`、`tsc --noEmit`、`eslint`、`bun test`（帧率档、分辨率换算、源视频校验、价格档表单）。
+- [ ] 后台安装插件、配置 MediaKit API Key 与渠道模型（分别验证 keep_source / user_select），配置 vquality × fpsBand 价格档。
+- [ ] 真实视频跑通增强：结果节点回填、按输出时长结算的流水备注与差额退回/补扣。
+- [ ] 超时与失败：上游失败退款、超 1 小时轮询失败的表现，源视频超限/规格不符时的前后端提示。
+
 ## 局域网 HTTP 访问报错 crypto.randomUUID is not a function
 
 - 已修复：`crypto.randomUUID` 只在安全上下文（HTTPS / localhost）可用，局域网 IP 走 HTTP 时页面启动即抛错。新增 `createClientUUID()`（`web/src/lib/client-id.ts`），优先用原生 `randomUUID`，否则用 `getRandomValues` 生成同格式 v4 UUID；前端所有直接调用已替换。
