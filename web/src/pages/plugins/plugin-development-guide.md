@@ -22,7 +22,7 @@ my-plugin.yingce-plugin
 
 ```json
 {
-  "apiVersion": "yingce.plugin/v1",
+  "apiVersion": "yingce.plugin/v2",
   "id": "acme-comfyui", "name": "Acme ComfyUI", "version": "1.0.0", "author": "Acme", "description": "通过工作流贡献提供视频生成能力",
   "permissions": ["generation.run", "media.read"],
   "configuration": { "fields": [{ "name": "apiKey", "type": "secret", "label": "API Token", "required": true }] },
@@ -42,6 +42,12 @@ my-plugin.yingce-plugin
   }
 }
 ```
+
+`apiVersion` 写 `yingce.plugin/v2`。`yingce.plugin/v1` 仍可通过后端安装校验和前端注册，但新包不要再写 v1。两版的身份、权限、配置和经典 `contributes` 字段相同；从 v1 迁移时只改这一处，已有 provider、workflow 和节点声明继续有效。`$ref` 请求表达式与旧式 `fields` / `taskIdPaths` 不区分版本。
+
+v2 额外允许前端声明 `contributes.editorSlots`，以及 `timeline.read`、`timeline.command`、`export.run`。插槽只能是 `timeline-panel`、`preview-renderer`、`inspector`、`asset-ingest`、`subtitle-tool`、`transcription-provider`、`export-renderer`、`ai-assistant`，可选数字 `priority`。时间线、检查器、素材导入、字幕和转写需要 `timeline.command`；预览和 AI 助手需要 `timeline.read`；导出需要 `export.run`。缺少对应权限时宿主不渲染该插槽，也不代发命令。v1 清单不注册插槽，也不走这组权限检查。
+
+上传包仍须声明后端认识的贡献（provider、支付、短信、工作流、画布节点、转换、命令、素材源、用量观察、AI 能力、Agent 或导入导出）。后端清单结构没有 `editorSlots`，只含插槽的包会被拒绝。`id` 在安装时为 1–96 位 `[a-z0-9._-]`，不能以 `-`、`_` 或 `.` 开头；前端注册再收紧为 kebab-case，且权限不能重复。
 
 带 Web 功能的插件在同一份清单中增加：
 
