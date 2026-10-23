@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { BookOpenCheck, FileText, Image as ImageIcon, Music2, Pencil, Video } from "lucide-react";
 
 import type { CanvasNodeRenderLOD } from "@/lib/canvas/canvas-node-lod";
@@ -20,7 +20,6 @@ import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textare
 import { CanvasVideoPreviewImage } from "./canvas-video-preview-image";
 import { CanvasFileUploadContent } from "./canvas-file-upload-content";
 import { MarkdownNodeContent } from "./nodes/markdown-node";
-import { ChartNodeContent } from "./nodes/chart-node";
 import { CompareNodeContent } from "./nodes/compare-node";
 import { ColorGradeNodeContent } from "./nodes/color-grade-node";
 import { HtmlNodeContent } from "./nodes/html-node";
@@ -31,6 +30,8 @@ import { MediaConversionNodeContent } from "./nodes/media-conversion-node";
 import { MEDIA_CONVERSION_NODE_TYPE } from "@/lib/media-conversion/contracts";
 import { AudioNodeContent, EmptyImageContent, ImageNodeContent, VideoNodeContent } from "./canvas-node-media-content";
 import { ErrorContent, LoadingContent, UnknownNodeContent } from "./canvas-node-status-content";
+
+const ChartNodeContent = lazy(() => import("./nodes/chart-node").then((module) => ({ default: module.ChartNodeContent })));
 
 export type CanvasNodeContentProps = {
     node: CanvasNodeData;
@@ -140,6 +141,23 @@ function formatPluginValue(value: unknown) {
     return typeof value === "string" ? value : JSON.stringify(value);
 }
 
+function ChartNodeLoading({ theme }: { theme: CanvasTheme }) {
+    return (
+        <div role="status" className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-center" style={{ color: theme.node.muted }}>
+            <span className="size-5 animate-spin rounded-full border-2 motion-reduce:animate-none" style={{ borderColor: theme.node.stroke, borderTopColor: theme.node.activeStroke }} />
+            <span style={{ fontSize: "var(--fs-label)" }}>正在加载图表</span>
+        </div>
+    );
+}
+
+function LazyChartNodeContent({ node, theme }: CanvasNodeContentProps) {
+    return (
+        <Suspense fallback={<ChartNodeLoading theme={theme} />}>
+            <ChartNodeContent node={node} theme={theme} />
+        </Suspense>
+    );
+}
+
 const nodeContentRenderers: Partial<Record<string, (props: CanvasNodeContentProps) => ReactNode>> = {
     [CanvasNodeType.Text]: TextContent,
     [CanvasNodeType.Script]: UnknownNodeContent,
@@ -155,7 +173,7 @@ const nodeContentRenderers: Partial<Record<string, (props: CanvasNodeContentProp
     [CanvasNodeType.Html]: HtmlNodeContent,
     [CanvasNodeType.Panorama]: PanoramaNodeContent,
     [CanvasNodeType.Compare]: CompareNodeContent,
-    [CanvasNodeType.Chart]: ChartNodeContent,
+    [CanvasNodeType.Chart]: LazyChartNodeContent,
     [CanvasNodeType.ColorGrade]: ColorGradeNodeContent,
 };
 

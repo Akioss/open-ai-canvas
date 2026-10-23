@@ -64,6 +64,20 @@ export default defineConfig({
                             priority: 30,
                         },
                         {
+                            // three / recharts 只跟预演、全景、表情和图表走。单独成包后，
+                            // 普通画布的静态依赖图不会把它们拉进首屏。
+                            name: "vendor-three",
+                            minSize: 0,
+                            test: /node_modules[\\/](?:three|three-stdlib)[\\/]|node_modules[\\/]@react-three[\\/]/,
+                            priority: 25,
+                        },
+                        {
+                            name: "vendor-recharts",
+                            minSize: 0,
+                            test: /node_modules[\\/]recharts[\\/]/,
+                            priority: 24,
+                        },
+                        {
                             name: "vendor-icons",
                             test: /node_modules[\\/](?:lucide-react|@ant-design[\\/]icons)[\\/]/,
                             priority: 20,
