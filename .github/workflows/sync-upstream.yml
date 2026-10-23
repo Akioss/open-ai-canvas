@@ -1,20 +1,68 @@
 name: Sync upstream
 
+# 本文件只属于 fork Akioss/open-ai-canvas，不要合回上游。
+# 流程、密钥和冲突处理见 .github/FORK_SYNC.md。
+#
+# 上游修改 .github/workflows/ 时，必须使用带 workflows 写权限的密钥 SYNC_TOKEN。
+# 这里故意不把 workflows 权限授给 github.token，也不在缺少 SYNC_TOKEN 时回退，
+# 避免再次出现“令牌能写普通文件、一碰到 workflow 文件就 422”的静默半失败。
+# contents: write 只用于失败时推送 fork-sync/alert（该分支不修改 workflow 文件）。
+
 on:
   schedule:
+    # UTC 每 6 小时。分钟取 17，避开整点。
     - cron: "17 */6 * * *"
   workflow_dispatch:
+    inputs:
+      auto_merge:
+        description: "无冲突时是否写入 main。auto 沿用变量 FORK_SYNC_AUTO_MERGE，未设置时默认写入。"
+        required: true
+        type: choice
+        options:
+          - auto
+          - "true"
+          - "false"
+        default: auto
+      dry_run:
+        description: "只检查落后提交和冲突，不推送、不创建 PR"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: fork-upstream-sync
+  cancel-in-progress: false
 
 jobs:
   sync:
+    name: Sync upstream
     if: github.repository == 'Akioss/open-ai-canvas'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - name: Merge upstream ddcat-ai/open-ai-canvas into main
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check fork sync script
+        run: bash .github/scripts/test_fork_sync.sh
+
+      - name: Sync ddcat-ai/open-ai-canvas
         env:
-          GH_TOKEN: ${{ secrets.SYNC_TOKEN || github.token }}
-        run: |
-          gh api -X POST "repos/${{ github.repository }}/merge-upstream" -f branch=main
+          REPO: ${{ github.repository }}
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+          ISSUE_TOKEN: ${{ github.token }}
+          AUTO_MERGE_INPUT: ${{ inputs.auto_merge }}
+          FORK_SYNC_AUTO_MERGE: ${{ vars.FORK_SYNC_AUTO_MERGE }}
+          FORK_SYNC_DISABLE_UPSTREAM_WORKFLOWS: ${{ vars.FORK_SYNC_DISABLE_UPSTREAM_WORKFLOWS }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+          UPSTREAM_URL: https://github.com/ddcat-ai/open-ai-canvas.git
+          UPSTREAM_HEAD: main
+        run: bash .github/scripts/fork-sync.sh
