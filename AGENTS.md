@@ -141,7 +141,7 @@ cd web && bun run dev
 - 用户要求“部署到服务器/云服务器/生产环境”且未指定方式时，默认采用 `scripts/install-server-image.sh` + 官方已发布 Release + `docker-compose.deploy.yml` + Host Updater；先确认该 Release 的镜像、更新器二进制和 `SHA256SUMS` 可用，按同一 Release 固定 `CANVAS_IMAGE_TAG` 和 `REPOSITORY_REF`。不要自行简化成 `web/backend` 两容器 SQLite 编排或生成替代 `compose.yml`；用户明确要求源码构建或轻量试运行时才选择对应方案，并说明在线更新边界。GHCR 拉取失败应排查网络、包可见性和认证，不静默切换为不受管源码部署。
 - 生产 Compose 使用 `docker-compose.deploy.yml`（PostgreSQL、Redis、migrate、yingce-agent、backend、web）。源码构建可叠加 `docker-compose.build.yml`，但本地镜像不由 Host Updater 管理；`scripts/install-server.sh` 不安装更新器，不能当作在线更新安装入口。公网只暴露 web 的 `CANVAS_HTTP_PORT`（默认 `3000`），backend `8080` 留在 Compose 网络内。
 - 诊断已有部署时，依据实际 Compose 文件、容器镜像、数据库驱动、数据挂载和 Host Updater 状态分别报告。源码构建不等于 local，SQLite 不证明使用了 `docker-compose.local.yml`，自定义文件名也不证明采用了任何仓库编排。已有 SQLite/自定义部署须先备份、迁移和验证，再转为受管部署；不要直接覆盖原 Compose 或数据卷。
-- 默认不启动 dev server；只有用户明确要求浏览器预览或联调时才启动，并先确认端口、数据目录和现有进程。
+- 默认不启动 dev server；只有用户明确要求浏览器预览或联调时才启动，并先确认端口、数据目录和现有进程。Cloud Agent 环境除外，见下文「Cursor Cloud specific instructions」。
 - 健康检查只能证明入口可用，不能替代登录、SSE、任务生成和资源访问验证。
 
 ## 8. 验证纪律
@@ -166,3 +166,14 @@ cd web && bun run dev
 - Git 提交说明使用 `<type>(<scope>): <业务模块> - <变更摘要>`，`type` 为 `feat|fix|refactor|perf|docs|test|build|ci|chore|revert`。
 
 交付前至少检查：改动是否聚焦、调用方和类型是否同步、错误/权限/数据归属是否完整、必要文档是否同步、验证是否如实说明、是否留下密钥或本地数据。
+
+## Cursor Cloud specific instructions
+
+Cloud Agent 每次启动都会拉起宿主机开发服务。先看日志和健康检查，确认没在跑再手工启动，避免同一端口起第二套。
+
+- 后端监听 `127.0.0.1:8080`，数据目录是 `.local/project-workbench-debug`（SQLite）。健康检查是 `GET /api/health`。日志在 `/tmp/yingce-backend.log`。
+- 前端是 Vite，监听 `0.0.0.0:3000`，`/api` 代理到 `127.0.0.1:8080`。日志在 `/tmp/yingce-web.log`。
+- 默认 PATH 上的工具链是 Go 1.25（`/usr/local/bin/go`）、Bun 1.3.9（`/usr/local/bin/bun`）和 Node 22。`web/` 只用 `bun install --frozen-lockfile`。Agent runtime 在 `backend/agent-runtime/pi`，用 `npm ci`。
+- SQLite 驱动需要 CGO 和 `libsqlite3-dev`。不要把 `backend/data` 当作开发库。
+- 首个注册用户就是管理员，之后默认关闭公开注册。验收时注册的账号只存在于上述数据目录。
+- 当前仓库没有可执行的 `docs/` 包，不要按旧说明去跑 `cd docs && bun run types:check`。
