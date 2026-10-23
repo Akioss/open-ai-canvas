@@ -137,7 +137,6 @@ import { CanvasNodeGraphContext, type CanvasNodeGraphContextValue } from "@/comp
 import { CanvasRefreshShell } from "./canvas-refresh-shell";
 import { queryGenerationTask } from "@/services/api/task-center";
 import type { CanvasImageEmotionPayload } from "@/components/canvas/canvas-node-emotion-panel";
-import { CanvasEmotionWorkspace } from "@/components/canvas/canvas-emotion-workspace";
 import { removeCanvasDrawing } from "@/lib/canvas/canvas-drawing-storage";
 import { useCanvasConnectionController } from "./use-canvas-connection-controller";
 import { useCanvasOperationHistory } from "./use-canvas-operation-history";
@@ -186,9 +185,20 @@ import { copyImageToSystemClipboard } from "./canvas-clipboard";
 
 const CanvasPrevisWorkbench = lazy(() => import("@/components/canvas/previs/canvas-previs-workbench").then((module) => ({ default: module.CanvasPrevisWorkbench })));
 const CanvasDrawingEditorModal = lazy(() => import("@/components/canvas/canvas-drawing-editor-modal").then((module) => ({ default: module.CanvasDrawingEditorModal })));
+const CanvasEmotionWorkspace = lazy(() => import("@/components/canvas/canvas-emotion-workspace").then((module) => ({ default: module.CanvasEmotionWorkspace })));
 
 const NODE_STATUS_SUCCESS = "success" as const;
 const EMPTY_RESOURCE_REFERENCES: CanvasResourceReference[] = [];
+
+function CanvasDeferredStatus({ label }: { label: string }) {
+    return (
+        <div role="status" aria-live="polite" className="pointer-events-none fixed inset-0 z-[var(--z-modal)] grid place-items-center">
+            <span className="rounded-[var(--r-md)] border border-[color-mix(in_srgb,var(--foreground)_10%,transparent)] bg-[var(--workspace-navigation)] px-4 py-2 text-sm text-[color-mix(in_srgb,var(--foreground)_72%,transparent)] shadow-[var(--shadow-md)]">
+                {label}
+            </span>
+        </div>
+    );
+}
 
 function visibleGenerationBatch(node: CanvasNodeData) {
     const batches = node.metadata?.generationBatches || [];
@@ -2969,17 +2979,19 @@ function CanvasViewportPage() {
                             ) : null}
 
                             {emotionNode?.metadata?.content && !isCanvasNodeMoving ? (
-                                <CanvasEmotionWorkspace
-                                    node={emotionNode}
-                                    viewport={viewport}
-                                    containerRef={containerRef}
-                                    dragOffset={dragPreview?.nodeIds.has(emotionNode.id) ? { x: dragPreview.x, y: dragPreview.y } : null}
-                                    isDragging={isNodeDragging && Boolean(dragPreview?.nodeIds.has(emotionNode.id))}
-                                    onClose={() => setEmotionNodeId(null)}
-                                    onConfirm={(payload: CanvasImageEmotionPayload) => {
-                                        void generateEmotionNode(emotionNode, payload);
-                                    }}
-                                />
+                                <Suspense fallback={<CanvasDeferredStatus label="正在加载表情编辑" />}>
+                                    <CanvasEmotionWorkspace
+                                        node={emotionNode}
+                                        viewport={viewport}
+                                        containerRef={containerRef}
+                                        dragOffset={dragPreview?.nodeIds.has(emotionNode.id) ? { x: dragPreview.x, y: dragPreview.y } : null}
+                                        isDragging={isNodeDragging && Boolean(dragPreview?.nodeIds.has(emotionNode.id))}
+                                        onClose={() => setEmotionNodeId(null)}
+                                        onConfirm={(payload: CanvasImageEmotionPayload) => {
+                                            void generateEmotionNode(emotionNode, payload);
+                                        }}
+                                    />
+                                </Suspense>
                             ) : null}
 
                             {dialogNode &&

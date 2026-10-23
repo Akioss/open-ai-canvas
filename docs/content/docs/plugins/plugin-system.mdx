@@ -7,7 +7,7 @@ description: 影策统一插件系统的扩展边界、Manifest 合同与 Eagle 
 
 > 状态：已实现首版（Eagle 外部素材来源 + AI 提示词优化器）
 >
-> 当前版本已经包含 Eagle 专属素材管理页面、后端本地桥接、原始文件树浏览、文件读取和写入，以及内置 `prompt-optimizer` AI 能力插件。第三方包统一使用 `.yingce-plugin`；远程 Web 入口仍必须经过沙箱运行时和宿主 RPC。
+> 当前版本已经包含 Eagle 专属素材管理页面、后端本地桥接、原始文件树浏览、文件读取和写入，以及内置 `prompt-optimizer` AI 能力插件。新插件清单使用 `yingce.plugin/v2`；`yingce.plugin/v1` 仍可安装。第三方包统一使用 `.yingce-plugin`；远程 Web 入口仍必须经过沙箱运行时和宿主 RPC。
 
 ## 1. 背景与范围
 
@@ -102,7 +102,7 @@ eagle-asset-connector.yingce-plugin
 
 ```json
 {
-  "apiVersion": "yingce.plugin/v1",
+  "apiVersion": "yingce.plugin/v2",
   "id": "eagle-asset-connector",
   "name": "Eagle 素材库",
   "version": "0.3.0",
@@ -117,13 +117,42 @@ eagle-asset-connector.yingce-plugin
 
 字段约束：
 
-- `id`：全局唯一，使用小写 kebab-case；安装后不能随意变更。
-- `version`：遵循 SemVer，用于更新和回滚判断。
-- `apiVersion`：固定为 `yingce.plugin/v1`，不接受旧版本或平行 Manifest。
-- `contributes`：声明 provider、workflow、canvasNodes、transforms、assetSources、agents 等能力。
-- `permissions`：最小权限集合，宿主在安装和首次使用时展示。
+- `id`：全局唯一。后端安装校验接受 1–96 个字符，字符集为 `[a-z0-9._-]`，且不能以 `-`、`_` 或 `.` 开头。前端 `registerPlugin` 进一步要求 kebab-case（`^[a-z0-9]+(?:-[a-z0-9]+)*$`），不允许下划线或点号。安装后不能随意变更。
+- `version`、`name`：不能为空。`name` 最长 160 个字符，`author` 最长 120 个字符。版本用于更新和回滚判断。
+- `apiVersion`：当前合同是 `yingce.plugin/v2`。宿主同时接受 `yingce.plugin/v1`。其他值会被后端 `ValidateManifest` 和前端注册器拒绝。
+- `contributes`：至少声明一种宿主认识的能力。见下一节。
+- `permissions`：最小权限集合，宿主在安装和首次使用时展示。前端注册器拒绝重复权限。
 - `dependencies`：插件依赖的其他插件或宿主能力。
 - `integrity`：用于校验远程产物是否被替换。
+
+### 5.1 `v1` 与 `v2`
+
+两版使用同一份清单字段：`id`、`name`、`version`、`author`、`description`、`documentation`、`entry`、`surfaces`、`enabled`、`installable`、`runtime`、`permissions`、`configuration`、`contributes`。把已有 v1 清单迁到 v2 时，先只改 `apiVersion`，其余字段保持有效。
+
+| | `yingce.plugin/v1` | `yingce.plugin/v2` |
+| --- | --- | --- |
+| 后端安装 | `ValidateManifest` 接受 | 同一套校验，同样接受 |
+| 前端注册 | 至少一种经典贡献 | 经典贡献或 `editorSlots` 至少一种 |
+| 编辑器插槽 | 不注册 `editorSlots` | 可声明 `contributes.editorSlots` |
+| 额外权限 | 无 | `timeline.read`、`timeline.command`、`export.run` |
+
+经典贡献是后端 `ManifestContributions` 认识的字段：`providers`、`paymentProviders`、`smsProviders`、`workflows`、`canvasNodes`、`transforms`、`commands`、`assetSources`、`usageObservers`、`aiCapabilities`、`agents`、`importExport`。请求体里的 `$ref` 表达式和旧式 `fields` / `taskIdPaths` 映射与 `apiVersion` 无关，两版都可以使用。
+
+`editorSlots[].slot` 只能是 `timeline-panel`、`preview-renderer`、`inspector`、`asset-ingest`、`subtitle-tool`、`transcription-provider`、`export-renderer`、`ai-assistant`。`priority` 省略或为数字。前端按插槽检查权限，缺权限则不渲染、不代发命令：
+
+| 插槽 | 所需权限 |
+| --- | --- |
+| `timeline-panel`、`inspector`、`asset-ingest`、`subtitle-tool`、`transcription-provider` | `timeline.command` |
+| `preview-renderer`、`ai-assistant` | `timeline.read` |
+| `export-renderer` | `export.run` |
+
+v1 不走这条插槽权限路径。v2 可以只贡献 `editorSlots`、不写经典贡献；内置剪辑工作台就是这种清单。后端结构体没有 `editorSlots` 字段，上传包反序列化时会丢掉它。因此只含插槽的清单过不了后端「至少一种贡献」校验，编辑器插槽目前由前端内置插件注册，不能当作可上传包的唯一贡献。
+
+迁移步骤：
+
+1. 将 `apiVersion` 改为 `yingce.plugin/v2`。
+2. 保留原有 `contributes` 与 `permissions`。官方非支付协议包已经按这一步分发。前端内置的 Eagle、提示词优化和画评插件源码仍以 `yingce.plugin/v1` 注册，宿主继续接受。
+3. 只有前端编辑器插件才追加 `editorSlots` 和上表中的权限。上传到后端的包仍需保留至少一种经典贡献。
 
 ## 6. 宿主 API 边界
 
@@ -133,7 +162,7 @@ eagle-asset-connector.yingce-plugin
 
 ```ts
 export interface CanvasPluginManifest {
-  apiVersion: "yingce.plugin/v1";
+  apiVersion: "yingce.plugin/v1" | "yingce.plugin/v2";
   id: string;
   name: string;
   version: string;

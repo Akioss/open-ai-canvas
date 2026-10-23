@@ -5,7 +5,7 @@ import { nanoid } from "nanoid";
 import { imageMetadata, videoMetadata } from "@/lib/canvas/canvas-generation-task-sync";
 import { fitImageNodeSize, preserveImageNodeSize } from "@/lib/canvas/canvas-node-size";
 import { createCanvasNode } from "@/lib/canvas/canvas-project-domain";
-import { createPrevisSceneFromTemplate, type PrevisTemplateId } from "@/lib/canvas/previs/previs-templates";
+import type { PrevisTemplateId } from "@/lib/canvas/previs/previs-template-catalog";
 import { mergePrevisOutputPreview, upsertPrevisSceneById } from "@/lib/canvas/previs/previs-session";
 import { uploadImage } from "@/services/image-storage";
 import { uploadMediaFile } from "@/services/file-storage";
@@ -66,6 +66,7 @@ export function useCanvasPrevis({
 }: UseCanvasPrevisOptions) {
     const { message } = App.useApp();
     const projectIdRef = useRef<string | null>(projectId);
+    const previsPrepareRef = useRef(false);
     projectIdRef.current = projectId;
 
     useEffect(() => {
@@ -81,32 +82,47 @@ export function useCanvasPrevis({
      */
     const createPrevisShot = useCallback(
         (templateId: PrevisTemplateId, position?: Position) => {
+            if (previsPrepareRef.current) return;
             const shots = nodesRef.current.filter((node) => node.metadata?.workflowKind === "shot");
             const shotIndex = Math.max(0, ...shots.map((node) => node.metadata?.shotIndex || 0)) + 1;
-            let scene = createPrevisSceneFromTemplate(templateId, `镜头 ${shotIndex}`);
-            const shot = scene.shots[0];
-            scene = { ...scene, shots: [{ ...shot, name: `镜头 ${shotIndex}` }] };
-            const node = createCanvasNode(CanvasNodeType.Video, position || getCanvasCenter(), {
-                workflowKind: "shot",
-                workflowTitle: `镜头 ${shotIndex}`,
-                shotIndex,
-                generationMode: "video",
-                videoEditOperation: "text_to_video",
-                status: NODE_STATUS_IDLE,
-                composerContent: "",
-                previsSceneId: scene.id,
-                previsShotId: shot.id,
-            });
-            node.title = `镜头 ${shotIndex}`;
-            node.width = PREVIS_NODE_SIZE.width;
-            node.height = PREVIS_NODE_SIZE.height;
-            const nextNodes = [...nodesRef.current, node];
-            nodesRef.current = nextNodes;
-            setNodes(nextNodes);
-            setSelectedNodeIds(new Set([node.id]));
-            setSelectedConnectionId(null);
-            updateProject(projectId, { previsScenes: upsertPrevisSceneById(currentPrevisScenes(projectId, previsScenes), scene) });
-            message.success("已创建预演台节点，点击缩略图进入编辑");
+            const projectAtStart = projectId;
+            previsPrepareRef.current = true;
+            const hideLoading = message.loading("正在准备预演模板", 0);
+            void import("@/lib/canvas/previs/previs-templates")
+                .then(({ createPrevisSceneFromTemplate }) => {
+                    if (projectIdRef.current !== projectAtStart) return;
+                    let scene = createPrevisSceneFromTemplate(templateId, `镜头 ${shotIndex}`);
+                    const shot = scene.shots[0];
+                    scene = { ...scene, shots: [{ ...shot, name: `镜头 ${shotIndex}` }] };
+                    const node = createCanvasNode(CanvasNodeType.Video, position || getCanvasCenter(), {
+                        workflowKind: "shot",
+                        workflowTitle: `镜头 ${shotIndex}`,
+                        shotIndex,
+                        generationMode: "video",
+                        videoEditOperation: "text_to_video",
+                        status: NODE_STATUS_IDLE,
+                        composerContent: "",
+                        previsSceneId: scene.id,
+                        previsShotId: shot.id,
+                    });
+                    node.title = `镜头 ${shotIndex}`;
+                    node.width = PREVIS_NODE_SIZE.width;
+                    node.height = PREVIS_NODE_SIZE.height;
+                    const nextNodes = [...nodesRef.current, node];
+                    nodesRef.current = nextNodes;
+                    setNodes(nextNodes);
+                    setSelectedNodeIds(new Set([node.id]));
+                    setSelectedConnectionId(null);
+                    updateProject(projectId, { previsScenes: upsertPrevisSceneById(currentPrevisScenes(projectId, previsScenes), scene) });
+                    message.success("已创建预演台节点，点击缩略图进入编辑");
+                })
+                .catch(() => {
+                    if (projectIdRef.current === projectAtStart) message.error("预演模板加载失败，请重试");
+                })
+                .finally(() => {
+                    previsPrepareRef.current = false;
+                    hideLoading();
+                });
         },
         [previsScenes, getCanvasCenter, message, nodesRef, projectId, setNodes, setSelectedConnectionId, setSelectedNodeIds, updateProject],
     );
@@ -120,21 +136,40 @@ export function useCanvasPrevis({
                 nodesRef.current = upgradedNodes;
                 setNodes(upgradedNodes);
             }
-            let scene = currentPrevisScenes(projectId, previsScenes).find((item) => item.id === node.metadata?.previsSceneId);
+            const scene = currentPrevisScenes(projectId, previsScenes).find((item) => item.id === node.metadata?.previsSceneId);
             if (!scene) {
                 // 孤儿节点修复路径：节点存在但场景丢了。这不是「新建」，不弹模板选择，
                 // 用空场景兜底 —— 绝不在用户没选过的情况下塞演员进去。
-                scene = createPrevisSceneFromTemplate("empty", node.metadata?.workflowTitle || node.title || "镜头场景");
-                const shot = scene.shots[0];
-                scene = { ...scene, shots: [{ ...shot, name: node.metadata?.workflowTitle || node.title || shot.name, prompt: node.metadata?.workflowDescription || "" }] };
-                const previsSceneId = scene.id;
-                const previsShotId = shot.id;
-                setNodes((current) => current.map((item) => (item.id === nodeId ? { ...item, metadata: { ...item.metadata, previsSceneId, previsShotId } } : item)));
-                updateProject(projectId, { previsScenes: upsertPrevisSceneById(currentPrevisScenes(projectId, previsScenes), scene) });
+                if (previsPrepareRef.current) return;
+                const projectAtStart = projectId;
+                const title = node.metadata?.workflowTitle || node.title || "镜头场景";
+                const description = node.metadata?.workflowDescription || "";
+                previsPrepareRef.current = true;
+                const hideLoading = message.loading("正在恢复预演场景", 0);
+                void import("@/lib/canvas/previs/previs-templates")
+                    .then(({ createPrevisSceneFromTemplate }) => {
+                        if (projectIdRef.current !== projectAtStart) return;
+                        const created = createPrevisSceneFromTemplate("empty", title);
+                        const shot = created.shots[0];
+                        const repaired = { ...created, shots: [{ ...shot, name: title || shot.name, prompt: description }] };
+                        const previsSceneId = repaired.id;
+                        const previsShotId = shot.id;
+                        setNodes((current) => current.map((item) => (item.id === nodeId ? { ...item, metadata: { ...item.metadata, previsSceneId, previsShotId } } : item)));
+                        updateProject(projectId, { previsScenes: upsertPrevisSceneById(currentPrevisScenes(projectId, previsScenes), repaired) });
+                        setPrevisNodeId(nodeId);
+                    })
+                    .catch(() => {
+                        if (projectIdRef.current === projectAtStart) message.error("预演场景加载失败，请重试");
+                    })
+                    .finally(() => {
+                        previsPrepareRef.current = false;
+                        hideLoading();
+                    });
+                return;
             }
             setPrevisNodeId(nodeId);
         },
-        [previsScenes, nodesRef, projectId, setPrevisNodeId, setNodes, updateProject],
+        [message, previsScenes, nodesRef, projectId, setPrevisNodeId, setNodes, updateProject],
     );
 
     /** 每次保存都基于 store 中最新 previsScenes upsert，避免旧闭包数组覆盖并发保存。 */

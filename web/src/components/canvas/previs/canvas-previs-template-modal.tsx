@@ -1,6 +1,6 @@
 import { Modal } from "antd";
 
-import { PREVIS_TEMPLATES, type PrevisTemplateId } from "@/lib/canvas/previs/previs-templates";
+import { PREVIS_TEMPLATES, type PrevisTemplateId } from "@/lib/canvas/previs/previs-template-catalog";
 
 /**
  * 新建预演台镜头前的模板选择。

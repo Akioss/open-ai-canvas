@@ -82,9 +82,11 @@ PAYMENT_PLUGIN_CGO_ENABLED=0 \
 
 ## Manifest 示例
 
+支付插件的清单 `apiVersion` 与进程请求里的 `version: "yingce.payment/v1"` 不是同一个字段。前者选择插件清单合同，后者是 RPC 数据契约。新建支付包写 `yingce.plugin/v2`；支付贡献字段与 v1 相同，不需要 `editorSlots`。宿主的 `ValidateManifest` 仍接受 `yingce.plugin/v1`，仓库里尚未改写的官方支付包继续以 v1 安装。
+
 ```json
 {
-  "apiVersion": "yingce.plugin/v1",
+  "apiVersion": "yingce.plugin/v2",
   "id": "example-aggregate-payment",
   "name": "Example 聚合支付",
   "version": "1.0.0",

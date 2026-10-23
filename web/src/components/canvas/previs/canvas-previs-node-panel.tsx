@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { lazy, Suspense, useState, type ReactNode } from "react";
 import { Box, Camera, Clapperboard, Lightbulb, LockKeyhole, Move3d, Sparkles, Timer } from "lucide-react";
 
 import { CachedResourceImage } from "@/components/cached-resource-image";
@@ -7,8 +7,9 @@ import { gatePrevisPreviewFailure, resolvePrevisActiveShot, resolvePrevisPreview
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import type { CanvasNodeData } from "@/types/canvas";
 import type { PrevisScene } from "@/types/previs";
-import { PrevisMiniViewport } from "./previs-mini-viewport";
 import "./canvas-previs-node-card.css";
+
+const PrevisMiniViewport = lazy(() => import("./previs-mini-viewport").then((module) => ({ default: module.PrevisMiniViewport })));
 
 export function CanvasPrevisNodePanel({ node, scene, readNodeContent, onOpen, professional = true }: { node: CanvasNodeData; scene: PrevisScene | null; readNodeContent: PrevisNodeContentReader; onOpen: () => void; professional?: boolean }) {
     const theme = canvasThemes[useActiveTheme()];
@@ -51,7 +52,11 @@ export function CanvasPrevisNodePanel({ node, scene, readNodeContent, onOpen, pr
                 {preview.kind === "image"
                     ? <CachedResourceImage src={preview.url} storageKey={preview.storageKey} alt={`${title} 已回写的预演台构图`} className="previs-node-preview-image" draggable={false} eager fallback={<PrevisPreviewState kind="empty" theme={theme} />} onError={() => setFailedUrl(preview.url || preview.storageKey || "" )} />
                     : scene && scene.objects.length > 0
-                        ? <PrevisMiniViewport scene={scene} />
+                        ? (
+                            <Suspense fallback={<PrevisPreviewState kind="loading" theme={theme} />}>
+                                <PrevisMiniViewport scene={scene} />
+                            </Suspense>
+                        )
                         : <PrevisPreviewState kind={preview.kind} theme={theme} />}
                 <span className={`previs-node-preview-cta ${professional ? "group-hover:opacity-100 group-focus-visible:opacity-100" : "opacity-100"}`} style={{ background: `${theme.toolbar.panel}e8`, color: theme.node.text }}>
                     {professional ? <><Move3d className="size-3.5" />进入预演台</> : <><LockKeyhole className="size-3.5" />专业模式可编辑</>}
@@ -71,12 +76,12 @@ export function CanvasPrevisNodePanel({ node, scene, readNodeContent, onOpen, pr
 function PrevisPreviewState({ kind, theme }: { kind: "loading" | "empty"; theme: CanvasTheme }) {
     const loading = kind === "loading";
     return (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-3 text-center">
+        <div role={loading ? "status" : undefined} aria-live={loading ? "polite" : undefined} className="flex h-full w-full flex-col items-center justify-center gap-2 px-3 text-center">
             <span className="grid size-11 shrink-0 place-items-center rounded-2xl" style={{ background: theme.toolbar.activeBg }}>
                 <Clapperboard className="size-4" style={{ color: theme.node.muted }} aria-hidden />
             </span>
-            <span className="max-w-full truncate text-xs font-semibold" style={{ color: theme.node.text }}>{loading ? "正在准备场景" : "尚未生成预览"}</span>
-            <span className="max-w-full text-[11px] leading-4" style={{ color: theme.node.muted }}>{loading ? "场景数据加载完成后显示" : "进入预演台并回写构图后显示"}</span>
+            <span className="max-w-full truncate text-xs font-semibold" style={{ color: theme.node.text }}>{loading ? "正在加载 3D 预览" : "尚未生成预览"}</span>
+            <span className="max-w-full text-[11px] leading-4" style={{ color: theme.node.muted }}>{loading ? "预演运行时加载完成后显示" : "进入预演台并回写构图后显示"}</span>
         </div>
     );
 }
