@@ -18,7 +18,7 @@
 
 ## 每次运行做什么
 
-定时为 UTC 每 6 小时一次（`17 */6 * * *`，即 00:17、06:17、12:17、18:17 UTC）。也可以在 Actions 里手动运行 Sync upstream。
+定时为 UTC 每周一 02:17 一次（`17 2 * * 1`，约等于 Asia/Shanghai 周一 10:17）。也可以在 Actions 里手动运行 Sync upstream。
 
 1. 抓取 `ddcat-ai/open-ai-canvas` 的 `main`。
 2. 把本仓库的 `upstream` 分支强制对齐到那个提交。这一步要改上游的 workflow 文件，所以必须使用密钥 `SYNC_TOKEN`。
@@ -125,7 +125,7 @@ Actions → Secrets and variables → Actions → Variables。
 | 无冲突且自动合并 | `main` 上多一个带 `[skip ci]` 的合并提交 | 成功 |
 | `main` 要求 PR，自动推送被拒绝 | 同步 PR，日志里有 warning | 成功 |
 
-同一状态重复出现时，工作流只更新正文，不每 6 小时追加一条评论。上游 SHA 或冲突文件变了，才会再评论一次。
+同一状态重复出现时，工作流只更新正文，不每周追加一条评论。上游 SHA 或冲突文件变了，才会再评论一次。
 
 不要合并草稿 PR `fork-sync/alert`。它只包含 `.github/fork-sync-alert.md`。即便合并进了 `main`，下一次成功的自动合并也会删掉这个文件。
 

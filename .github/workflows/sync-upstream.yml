@@ -10,8 +10,8 @@ name: Sync upstream
 
 on:
   schedule:
-    # UTC 每 6 小时。分钟取 17，避开整点。
-    - cron: "17 */6 * * *"
+    # UTC 每周一 02:17（约等于 Asia/Shanghai 周一 10:17）。分钟取 17，避开整点。
+    - cron: "17 2 * * 1"
   workflow_dispatch:
     inputs:
       auto_merge:
