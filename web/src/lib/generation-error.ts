@@ -22,6 +22,8 @@ const REASON_MESSAGES: Record<string, string> = {
     model_catalog_mismatch: "模型配置已更新，请重新选择模型后再试。",
     invalid_model_selection: "模型选择无效，请重新选择模型后再试。",
     quota_exceeded: "积分或额度不足，请充值后再试。",
+    storage_capacity_exceeded: "账号存储空间不足，请清理素材或购买存储空间后再试。",
+    storage_read_only: "账号已超出存储容量且宽限期已结束，当前为只读状态。请删除素材或购买存储空间。",
     rate_limited: "请求过于频繁，请稍后再试。",
     timeout: "模型服务响应超时，请稍后再试。",
     bad_gateway: "模型服务暂时不可用，请稍后再试。",
@@ -91,7 +93,7 @@ export function generationErrorMessage(error: unknown) {
         if (hasHttpStatus(raw, 429)) return "服务当前繁忙，请稍后重试。";
         if (hasHttpStatus(raw, 401, 403)) return "生成服务鉴权失败，请检查渠道配置。";
         if (hasHttpStatus(raw, 404)) return "生成服务地址不可用，请检查渠道配置。";
-        if (hasHttpStatus(raw, 500, 502, 503, 504)) return NETWORK_ERROR_MESSAGE;
+        if (hasHttpStatus(raw, 500, 502, 503, 504)) return REASON_MESSAGES.unavailable;
         if (containsInfrastructureDetails(raw)) return NETWORK_ERROR_MESSAGE;
     }
     if (isModelCapabilityFailure(displayMessage)) return MODEL_CAPABILITY_ERROR_MESSAGE;

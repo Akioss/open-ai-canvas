@@ -12,6 +12,7 @@ import { createCanvasNode } from "@/lib/canvas/canvas-project-domain";
 import { isAudioFile } from "@/lib/canvas/canvas-project-generation";
 import { fitImageNodeSize, fitNodeSize, VIDEO_NODE_MAX_SIZE } from "@/lib/canvas/canvas-node-size";
 import { CANVAS_UPLOAD_ACCEPT, createFileUploadPlaceholder, uploadNodeType, uploadPercent } from "@/lib/canvas/canvas-file-upload";
+import { recordReplacedMediaVersion } from "@/lib/canvas/canvas-media-versions";
 import { resourceIdFromStorageKey, resourceStorageKey, uploadResourceFile } from "@/services/api/resources";
 import { uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
@@ -117,10 +118,10 @@ export function useCanvasUpload({
             const result = await ensureCanvasNodeAsset({ canvasId, domainProjectId, node, source: "canvas-upload" });
             setNodes((current) => current.map((item) => item.id === node.id ? { ...item, metadata: { ...item.metadata, assetId: result.assetId } } : item));
             if (domainProjectId) await queryClient.invalidateQueries({ queryKey: ["project", domainProjectId] });
-            return true;
+            return { persisted: true, syncPending: result.syncPending };
         } catch (error) {
             message.warning(error instanceof Error ? `媒体已添加到画布，但素材同步失败：${error.message}` : "媒体已添加到画布，但素材同步失败");
-            return false;
+            return { persisted: false, syncPending: false };
         }
     }, [canvasId, domainProjectId, message, queryClient, setNodes]);
 
@@ -189,7 +190,7 @@ export function useCanvasUpload({
                 progress.done("上传完成，画布占位已移除");
                 return null;
             }
-            const node: CanvasNodeData = {
+            const uploadedNode: CanvasNodeData = {
                 ...currentNode, type: placeholder.type,
                 metadata: {
                     ...currentNode.metadata, ...metadata,
@@ -208,11 +209,14 @@ export function useCanvasUpload({
                     } : {}),
                 },
             };
+            // 替换文件保留旧媒体为历史版本，可在版本面板切回。
+            const node = replaceId ? recordReplacedMediaVersion(original, uploadedNode, "upload") : uploadedNode;
             setNodes((current) => current.map((item) => item.id === id ? { ...item, type: node.type, metadata: node.metadata } : item));
             if (domainProjectId) progress.update("写入项目资产", 4);
             const persisted = await persistMediaNode(node);
             const localOnly = metadata.storageKey && !resourceIdFromStorageKey(metadata.storageKey);
-            progress.done(localOnly ? "已保存在本机，尚未上传到服务器" : persisted ? "文件已添加到画布" : "文件已添加，项目资产待重试");
+            const pendingLabel = domainProjectId ? "项目资产正在自动同步" : "云端素材正在自动同步";
+            progress.done(localOnly ? "已保存在本机，尚未上传到服务器" : persisted.syncPending ? `文件已添加到画布，${pendingLabel}` : persisted.persisted ? "文件已添加到画布" : "文件已添加，项目资产待重试");
             if (localOnly) message.warning("文件已保存在本机，尚未上传到服务器");
             return id;
         } catch (error) {
@@ -435,7 +439,15 @@ export function useCanvasUpload({
             selectInsertedNode(id, "preserve");
             if (domainProjectId) progress.update("写入项目资产", 4);
             const persisted = await persistMediaNode(node);
-            progress.done(persisted ? "已生成新视频片段并加入项目资产" : "已生成新视频片段，项目资产待重试");
+            progress.done(
+                persisted.syncPending
+                    ? domainProjectId
+                        ? "已生成新视频片段，本地素材已保存，项目资产正在自动同步"
+                        : "已生成新视频片段，本地素材已保存，云端素材正在自动同步"
+                    : persisted.persisted
+                      ? "已生成新视频片段并加入项目资产"
+                      : "已生成新视频片段，项目资产待重试",
+            );
             return node;
         } catch (error) {
             const details = error instanceof Error ? error.message : "合成视频片段失败";

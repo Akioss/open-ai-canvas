@@ -1,5 +1,6 @@
 import { http, apiBaseURL } from "@/services/api/request";
 import { consumeTaskTextStream, createTaskTextStreamParser } from "@/services/api/task-text-stream";
+import { getActiveUserScope } from "@/lib/user-scope";
 
 export type AgentPermissionMode = "read_only" | "auto" | "request_approval";
 export type AgentReasoningMode = "off" | "auto" | "deep";
@@ -69,6 +70,10 @@ export type AgentApproval = {
 
 export type AgentRun = {
     id: string;
+    conversationId?: string;
+    parentId?: string;
+    userPrompt?: string;
+    idempotencyKey?: string;
     canvasId: string;
     status: "queued" | "running" | "waiting_approval" | "completed" | "failed" | "cancelled" | "rejected";
     permissionMode: AgentPermissionMode;
@@ -80,10 +85,25 @@ export type AgentRun = {
     updatedAt: string;
     skills?: Array<{ id: string; name: string; version: string; hash: string }>;
     events?: AgentEvent[];
+    eventCount?: number;
+    latestSeq?: number;
+    eventsTruncated?: boolean;
     spentCredits?: number;
     step?: number;
     activeMessage?: { messageId: string; text: string };
     approval?: AgentApproval;
+};
+
+export type AgentConversationSummary = {
+    id: string;
+    canvasId: string;
+    title: string;
+    latestRunId: string;
+    status: AgentRun["status"];
+    revision: number;
+    cleanupPending?: boolean;
+    createdAt: string;
+    updatedAt: string;
 };
 
 export type AgentEvent = {
@@ -120,6 +140,7 @@ export type CreateAgentRunInput = {
     channelModelKey?: string;
     skillIds?: string[];
     focusNodeIds?: string[];
+    focusNodeOmittedCount?: number;
     permissionMode?: AgentPermissionMode;
     contextScope?: string[];
     budget?: { maxCredits?: number; maxGenerationTasks?: number; maxVideoSeconds?: number; maxSteps?: number };
@@ -130,7 +151,9 @@ export type CreateAgentRunInput = {
 // Never apply this policy to arbitrary provider generation POSTs.
 async function submitAgentRequest(path: string, input: CreateAgentRunInput) {
     const body = JSON.parse(JSON.stringify(input)) as CreateAgentRunInput;
+    const scope = getActiveUserScope();
     for (let attempt = 0; ; attempt++) {
+        if (getActiveUserScope() !== scope) throw new DOMException("账号已切换，已停止原账号的请求重试", "AbortError");
         try {
             return await http.post<{ run: AgentRun }>(path, body, { timeout: 15_000 });
         } catch (cause) {
@@ -157,6 +180,11 @@ export function sendAgentInterjection(runId: string, input: { text: string; mess
     return http.post<{ accepted: boolean; pending: number }>(`/agent/runs/${encodeURIComponent(runId)}/interjections`, input, { timeout: 20_000 });
 }
 
+/** 撤回尚未送达模型的插话；不会停止本轮，也不会取消已提交的生成任务。 */
+export function withdrawAgentInterjection(runId: string, messageId: string) {
+    return http.delete<{ withdrawn: boolean }>(`/agent/runs/${encodeURIComponent(runId)}/interjections/${encodeURIComponent(messageId)}`, { timeout: 15_000 });
+}
+
 export function getAgentCapabilities() {
     return http.get<{ version: number; permissionModes: AgentPermissionMode[]; contextScopes: string[]; skills: boolean; writeTools: boolean; capabilitySetVersion?: string; capabilitySetHash?: string; nodeTypes?: string[] }>("/agent/capabilities", { timeout: 15_000 });
 }
@@ -174,8 +202,23 @@ export function updateAgentProfile(input: { scope: AgentProfileScope; projectId?
     return http.patch<AgentProfileView>("/agent/profile", input, { timeout: 15_000 });
 }
 
-export function getAgentRun(runId: string, signal?: AbortSignal) {
-    return http.get<{ run: AgentRun }>(`/agent/runs/${encodeURIComponent(runId)}`, { signal });
+export function getAgentRun(runId: string, signal?: AbortSignal, options: { sinceSeq?: number; eventLimit?: number; fromStart?: boolean } = {}) {
+    return http.get<{ run: AgentRun }>(`/agent/runs/${encodeURIComponent(runId)}`, { signal, params: options });
+}
+
+export function listAgentConversations(options: { canvasId: string; before?: string; limit?: number; signal?: AbortSignal }) {
+    const { signal, ...params } = options;
+    return http.get<{ items: AgentConversationSummary[]; nextCursor?: string }>("/agent/conversations", { signal, params });
+}
+
+/** 单个对话的最新轮次摘要，只含控制列；用于判断目录之外的已选对话是否变化。 */
+export function getAgentConversation(conversationId: string, signal?: AbortSignal) {
+    return http.get<AgentConversationSummary>(`/agent/conversations/${encodeURIComponent(conversationId)}`, { signal });
+}
+
+export function listAgentConversationRuns(conversationId: string, options: { after?: string; limit?: number; signal?: AbortSignal } = {}) {
+    const { signal, ...params } = options;
+    return http.get<{ items: AgentRun[]; nextCursor?: string }>(`/agent/conversations/${encodeURIComponent(conversationId)}/runs`, { signal, params });
 }
 
 export function cancelAgentRun(runId: string) {

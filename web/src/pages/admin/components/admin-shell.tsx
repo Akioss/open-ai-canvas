@@ -1,4 +1,4 @@
-import { App, ConfigProvider, Dropdown } from "antd";
+import { ConfigProvider, Dropdown } from "antd";
 import type { MenuProps } from "antd";
 import {
     Activity,
@@ -13,6 +13,7 @@ import {
     FileClock,
     HardDrive,
     Home,
+    Inbox,
     Infinity as InfinityIcon,
     KeyRound,
     Layers3,
@@ -44,6 +45,7 @@ import { Link, NavLink, Outlet, useLocation } from "react-router";
 import { AppChangelogButton } from "@/components/layout/app-changelog-modal";
 import { BrandLogoFrame } from "@/components/brand/brand-logo";
 import { publishWorkspaceSidebarCollapsed, readWorkspaceSidebarCollapsed, subscribeWorkspaceSidebarCollapsed } from "@/components/layout/workspace-sidebar-state";
+import { AppFeedbackProvider } from "@/components/layout/app-feedback";
 import { cn } from "@/lib/utils";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -87,6 +89,7 @@ const adminNavigation: Array<{ label: string; items: AdminNavigationItem[] }> = 
         items: [
             { path: "/admin/users", label: "用户管理", description: "账号、角色与状态", icon: <UsersRound className="size-4" /> },
             { path: "/admin/login-logs", label: "用户登录日志", description: "登录、失败与主动退出", icon: <FileClock className="size-4" /> },
+            { path: "/admin/feedbacks", label: "用户反馈", description: "Bug、功能提议与收件箱答复", icon: <Inbox className="size-4" /> },
             { path: "/admin/announcements", label: "系统公告", description: "发布、关闭与历史公告", icon: <BellRing className="size-4" /> },
             { path: "/admin/banner-announcements", label: "常驻通知", description: "首页顶部常驻滚动通知", icon: <Megaphone className="size-4" /> },
             { path: "/admin/agent-lessons", label: "Agent 记忆", description: "按用户查看个人记忆", icon: <Sparkles className="size-4" /> },
@@ -158,7 +161,7 @@ function AdminShellLayout() {
 
     return (
         <ConfigProvider theme={getIsolatedAdminAntTheme(dark, appearance.activeSkin)} getPopupContainer={(node) => adminPopupContainer(node)}>
-            <App>
+            <AppFeedbackProvider>
                 <main id="admin-root" data-admin-root data-admin-density={density} className="admin-shell flex h-full min-h-0 overflow-hidden">
                     <aside className={cn("admin-sidebar hidden shrink-0 flex-col overflow-hidden lg:flex", collapsed && "is-collapsed")}>
                         <div className="admin-sidebar-identity shrink-0">
@@ -209,7 +212,7 @@ function AdminShellLayout() {
                         </Suspense>
                     </section>
                 </main>
-            </App>
+            </AppFeedbackProvider>
         </ConfigProvider>
     );
 }
@@ -225,7 +228,7 @@ export function AdminPageFrame({ title, description, actions, back, scroll = fal
         <div className={cn("admin-page-root", scroll && "admin-page-root-scrollable")}>
             <div className={cn("admin-page-frame", scroll && "admin-page-frame-scrollable")}>
                 <header className="admin-page-header flex shrink-0 flex-col sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex min-w-0 items-center gap-2.5">
+                    <div className="flex min-w-0 items-center gap-2">
                         {back ? (
                             <AdminTooltip title={back.label}>
                                 <button type="button" className="admin-icon-button shrink-0" aria-label={back.label} onClick={back.onClick}>

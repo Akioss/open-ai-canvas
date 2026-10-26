@@ -31,7 +31,7 @@ export function WorkspaceCommandPalette({ open, onClose }: { open: boolean; onCl
         };
         return [
             { id: "home", title: "首页", icon: Home, to: "/" },
-            toolEntry("projects", "/projects"),
+            ...(features.shortDramaEnabled ? [toolEntry("projects", "/projects")] : []),
             toolEntry("canvas", "/canvas"),
             ...(features.taskCenterEnabled ? [toolEntry("tasks", "/tasks")] : []),
             toolEntry("assets", "/assets"),
@@ -136,7 +136,7 @@ export function WorkspaceCommandPalette({ open, onClose }: { open: boolean; onCl
                                             onMouseEnter={() => setHighlight(index)}
                                             onClick={() => activateEntry(entry)}
                                             className={cn(
-                                                "flex w-full items-center gap-2.5 rounded-[var(--r-sm)] px-3 py-2.5 text-left text-[var(--fs-body)] transition-colors",
+                                                "flex w-full items-center gap-2 rounded-[var(--r-sm)] px-3 py-2 text-left text-[var(--fs-body)] transition-colors",
                                                 index === highlight ? "bg-surface-hover text-foreground" : "text-foreground/65",
                                             )}
                                         >
