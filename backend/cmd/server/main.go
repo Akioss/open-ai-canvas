@@ -86,6 +86,9 @@ func run(ctx context.Context) error {
 	if err := svc.EnsureSystemChannelModels(); err != nil {
 		return err
 	}
+	if err := svc.EnsureDefaultUserGroup(); err != nil {
+		return err
+	}
 	if err := svc.EnsureDefaultPromptTemplates(); err != nil {
 		return err
 	}
@@ -139,6 +142,8 @@ func run(ctx context.Context) error {
 	svc.StartWorker()
 	// 启动后回填存量视频的播放副本转码（幂等，无待处理项即退出）。
 	go svc.BackfillPlaybackTranscodes()
+	// 启动后为本地存储中尺寸未知的存量视频补探测宽高（有界、幂等；对象存储视频在短剧投送时按需修复）。
+	go svc.BackfillVideoResourceDimensions(ctx)
 	status.markStarted()
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- httpServer.Serve(listener) }()

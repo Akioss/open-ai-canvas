@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { ModelPicker } from "@/components/model-picker";
-import { dramaChoiceKey, dramaChoiceToModel, modelToDramaChoice } from "@/lib/drama/model-choice";
+import { dramaChoiceKey, dramaChoiceKeys, dramaChoiceToModel, dramaVideoRatioIssue, dramaVideoResolutionIssue, modelToDramaChoice } from "@/lib/drama/model-choice";
 import { cn } from "@/lib/utils";
 import { getDramaModels, type DramaCapability, type DramaModelChoice } from "@/services/api/drama";
 import { useEffectiveConfig } from "@/stores/use-config-store";
@@ -13,13 +13,16 @@ export function useDramaModelCatalog() {
 
 /**
  * 短剧制作用的模型下拉：沿用创作端带品牌图标的通用 ModelPicker，
- * 只放行后端短剧目录里可无人值守执行的平台模型。
+ * 只有服务端可无人值守执行的平台模型可选，其余模型置灰并显示不能用的具体原因。
+ * 视频模型传入作品画幅时，给不出该画幅的模型同样置灰，避免选了才发现出片是横屏。
  */
 export function DramaModelPicker({
     capability,
     value,
     onChange,
     placeholder,
+    aspectRatio,
+    videoResolution,
     size = "md",
     showPrice = true,
     className,
@@ -28,6 +31,9 @@ export function DramaModelPicker({
     value?: DramaModelChoice;
     onChange: (choice: DramaModelChoice) => void;
     placeholder?: string;
+    aspectRatio?: string;
+    /** 视频模型：作品指定的分辨率，给不出的模型置灰。 */
+    videoResolution?: string;
     size?: "sm" | "md";
     showPrice?: boolean;
     className?: string;
@@ -36,15 +42,28 @@ export function DramaModelPicker({
     const catalogQuery = useDramaModelCatalog();
     const allowed = useMemo(() => {
         const options = catalogQuery.data?.options[capability] || [];
-        return new Map(options.map((option) => [dramaChoiceKey(option.choice), option.choice]));
+        return new Map(options.map((option) => [dramaChoiceKey(option.choice), option]));
     }, [capability, catalogQuery.data]);
-    const modelFilter = useCallback(
+    const blocked = useMemo(() => {
+        const items = catalogQuery.data?.unavailable?.[capability] || [];
+        return new Map(items.map((item) => [dramaChoiceKey(item.choice), item.reason]));
+    }, [capability, catalogQuery.data]);
+    // 创作端能选的模型这里都列出；短剧用不了的置灰并写明原因，不再静默隐藏。
+    const matchChoice = useCallback((model: string) => dramaChoiceKeys(config, model).find((key) => allowed.has(key)), [allowed, config]);
+    const modelDisabledReason = useCallback(
         (model: string) => {
-            const key = dramaChoiceKey(modelToDramaChoice(config, model));
-            // 目录未返回前只限制为平台模型；返回后与服务端可执行目录严格一致。
-            return Boolean(key) && (!catalogQuery.data || allowed.has(key));
+            const keys = dramaChoiceKeys(config, model);
+            if (!keys.length) return "个人渠道的密钥只保存在浏览器，短剧在服务端无人值守执行，只能使用平台模型";
+            if (!catalogQuery.data) return "";
+            const matched = matchChoice(model);
+            if (matched) return capability === "video" ? (aspectRatio && dramaVideoRatioIssue(allowed.get(matched), aspectRatio)) || dramaVideoResolutionIssue(allowed.get(matched), videoResolution) : "";
+            for (const key of keys) {
+                const reason = blocked.get(key);
+                if (reason) return reason;
+            }
+            return "模型列表已更新，请刷新页面后再选";
         },
-        [allowed, catalogQuery.data, config],
+        [allowed, aspectRatio, blocked, capability, catalogQuery.data, config, matchChoice, videoResolution],
     );
     const current = dramaChoiceToModel(config, capability, value);
 
@@ -57,13 +76,15 @@ export function DramaModelPicker({
             fullWidth
             showSelectedPrice={showPrice}
             showOptionPrices
-            modelFilter={modelFilter}
+            modelDisabledReason={modelDisabledReason}
             className={cn("drama-model-picker", size === "sm" && "is-sm", className)}
             placeholder={current ? placeholder || "选择模型" : value?.label || placeholder || "选择模型"}
             onChange={(model) => {
                 const choice = modelToDramaChoice(config, model);
                 if (!choice) return;
-                const known = allowed.get(dramaChoiceKey(choice));
+                // 以后端登记的选择为准，避免提交一个后端不认的键。
+                const matched = matchChoice(model);
+                const known = matched ? allowed.get(matched)?.choice : undefined;
                 onChange(known ? { ...known, label: choice.label || known.label } : choice);
             }}
         />

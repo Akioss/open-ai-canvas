@@ -22,6 +22,9 @@ var (
 	SceneAssetVariables     = []string{"{{场景名称}}", "{{场景设定}}", "{{项目画风}}", "{{画面规则}}"}
 )
 
+// AssetImageRatio 是资产参考图（场景、道具与内置角色方案）的统一画幅。
+const AssetImageRatio = "16:9"
+
 type AssetScheme struct {
 	Mode        string `json:"mode"`
 	Name        string `json:"name"`
@@ -34,25 +37,25 @@ type AssetScheme struct {
 }
 
 const defaultScenePrompt = `{{项目画风}}。场景概念设定图：{{场景名称}}。{{场景设定}}。
-无人物，空镜，构图完整，主体空间与出入口清晰，前中后景层次分明；光源方向明确，色调与时代服化道统一。
+横版宽景构图，无人物，空镜，构图完整，主体空间与出入口清晰，前中后景层次分明；光源方向明确，色调与时代服化道统一。
 禁止文字、水印、边框。{{画面规则}}`
 
 // propPrompt 是关键道具参考图模板：单件道具居中、无人物，供视频生成时保持道具外观一致。
 const propPrompt = `{{项目画风}}。道具设定图：{{道具名称}}。{{道具设定}}。
-单件道具居中完整展示，干净浅灰背景，柔和棚拍光，外形、材质、颜色与细节清晰；无人物、无手部。
+横版构图，单件道具居中完整展示，四周留白，干净浅灰背景，柔和棚拍光，外形、材质、颜色与细节清晰；无人物、无手部。
 禁止文字、水印、边框。{{画面规则}}`
 
 var assetSchemes = []AssetScheme{
 	{
-		Mode: AssetModePortrait, Name: "定妆照", Ratio: "3:4",
+		Mode: AssetModePortrait, Name: "定妆照", Ratio: AssetImageRatio,
 		Description: "单人正面半身，五官最清晰。出图快、成本低，适合角色多、以对话为主的短剧。",
 		FrameHint:   "参考图为角色定妆照，只沿用其五官、发型与服装",
 		CharacterPrompt: `{{项目画风}}。角色定妆照：{{角色名称}}。{{角色设定}}。
-单人，正面半身，中性表情，目视镜头；干净浅色纯背景，柔和均匀的正面光，五官、发型与服装细节清晰。
+横版构图，单人居中，正面半身，中性表情，目视镜头；干净浅色纯背景，柔和均匀的正面光，五官、发型与服装细节清晰。
 禁止文字、水印、道具遮挡面部、额外人物。{{画面规则}}`,
 	},
 	{
-		Mode: AssetModeTurnaround, Name: "三视图设定板", Ratio: "16:9",
+		Mode: AssetModeTurnaround, Name: "三视图设定板", Ratio: AssetImageRatio,
 		Description: "正面、侧面、背面全身同一张图，服装与体型一致性最好，适合打戏和全身镜头多的作品。",
 		FrameHint:   "参考图为角色三视图设定板，只沿用其外貌、服装与体型，不要复制排版",
 		CharacterPrompt: `{{项目画风}}。专业人物三视图设定板：{{角色名称}}。{{角色设定}}。
@@ -61,7 +64,7 @@ var assetSchemes = []AssetScheme{
 禁止文字、边框、道具说明、表情变化和额外人物。{{画面规则}}`,
 	},
 	{
-		Mode: AssetModeFourView, Name: "四格资产板 · 声纹", Ratio: "16:9",
+		Mode: AssetModeFourView, Name: "四格资产板 · 声纹", Ratio: AssetImageRatio,
 		Description: "面部特写 + 正 / 侧 / 背无脸全身四格，底部附声纹条。脸只在特写里出现一次，跨集换脸最少，适合长剧。",
 		FrameHint:   "参考图为角色四格资产板：面部以特写格为准，服装与体型以全身格为准，不要复制排版与声纹条",
 		CharacterPrompt: `{{项目画风}}。角色四格资产参考图：{{角色名称}}。{{角色设定}}。
@@ -98,6 +101,11 @@ type AssetSettings struct {
 	CharacterPrompt string `json:"characterPrompt"`
 	ScenePrompt     string `json:"scenePrompt"`
 	CharacterRatio  string `json:"characterRatio"`
+	// Resolution / PropResolution / SceneResolution 是角色、道具、场景参考图的分辨率档位（1k / 1.5k / 2k / 4k），
+	// 空串按该类参考图所用图片模型的默认档位。
+	Resolution      string `json:"resolution,omitempty"`
+	PropResolution  string `json:"propResolution,omitempty"`
+	SceneResolution string `json:"sceneResolution,omitempty"`
 	SourceSkillID   string `json:"sourceSkillId,omitempty"`
 	SourceSkillName string `json:"sourceSkillName,omitempty"`
 	SourcePath      string `json:"sourcePath,omitempty"`
@@ -126,15 +134,37 @@ func (a AssetSettings) Normalized() AssetSettings {
 	switch a.CharacterRatio {
 	case "3:4", "9:16", "1:1", "16:9", "4:3":
 	default:
-		a.CharacterRatio = firstNonEmpty(scheme.Ratio, "3:4")
+		a.CharacterRatio = firstNonEmpty(scheme.Ratio, AssetImageRatio)
 	}
 	if a.Mode != AssetModeCustom {
 		a.CharacterRatio = scheme.Ratio
 	}
+	a.Resolution = normalizedAssetTier(a.Resolution)
+	a.PropResolution = normalizedAssetTier(a.PropResolution)
+	a.SceneResolution = normalizedAssetTier(a.SceneResolution)
 	a.SourceSkillID = truncateRunes(strings.TrimSpace(a.SourceSkillID), 64)
 	a.SourceSkillName = truncateRunes(strings.TrimSpace(a.SourceSkillName), 120)
 	a.SourcePath = truncateRunes(strings.TrimSpace(a.SourcePath), 240)
 	return a
+}
+
+func normalizedAssetTier(value string) string {
+	switch value = strings.ToLower(strings.TrimSpace(value)); value {
+	case "1k", "1.5k", "2k", "4k":
+		return value
+	}
+	return ""
+}
+
+// ResolutionFor 是某类参考图（character / prop / scene）的分辨率档位，空串按模型默认。
+func (a AssetSettings) ResolutionFor(kind string) string {
+	switch kind {
+	case "prop":
+		return a.PropResolution
+	case "scene":
+		return a.SceneResolution
+	}
+	return a.Resolution
 }
 
 // FrameHint 返回首帧提示词里对参考图版式的说明。

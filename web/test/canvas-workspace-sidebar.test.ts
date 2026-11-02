@@ -15,7 +15,7 @@ test("canvas removes the standalone asset tray while retaining sidebar assets an
 
 test("workspace keeps a permanent rail and independent task/history entries", () => {
     const source = component("canvas-workspace-panel.tsx");
-    for (const label of ["主页", "节点", "资产", "任务", "历史"]) expect(source).toContain(label);
+    for (const label of ["主页", "节点", "素材库", "任务", "历史"]) expect(source).toContain(label);
     expect(source).not.toContain('id: "tools"');
     expect(source).not.toContain("CanvasWorkspaceToolPanel");
     expect(source).not.toContain("onInsertTool");
@@ -120,6 +120,7 @@ test("editor rail and expanded panel share one restrained glass surface without 
     expect(styles).toContain("border-radius: var(--r-2xl)");
     expect(styles).not.toContain("border-radius: calc(var(--radius) * 3.5)");
     expect(page).toContain('workspaceOpen ? "canvas-workspace-expanded" : ""');
-    expect(styles).not.toContain("backdrop-filter: none");
+    // 短剧精修画布的无底板工具条（.is-bare，文件末尾）是唯一允许关闭模糊的规则；轨道与展开面板仍保持玻璃材质。
+    expect(styles.split(".canvas-floating-dock.is-bare")[0]).not.toContain("backdrop-filter: none");
     expect(styles).not.toContain("box-shadow: none");
 });
